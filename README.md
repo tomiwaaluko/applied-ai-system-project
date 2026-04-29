@@ -1,94 +1,86 @@
-# CareerScope
+# CareerScope AI
 
 ![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
+![Next.js 14](https://img.shields.io/badge/Next.js-14-black)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 ![Built for CodePath AI110](https://img.shields.io/badge/built%20for-CodePath%20AI110-orange)
 
-CareerScope is a multi-agent AI system that analyzes your resume against any job description and returns evidence-based gap analysis, 30/60/90-day roadmap, and recruiter-ready outreach drafts.
+CareerScope is a full-stack multi-agent AI system that analyzes a resume against any job description and returns an evidence-based gap analysis, 30/60/90-day roadmap, and recruiter-ready outreach drafts.
 
 ## Demo
 
 > [Watch the full demo walkthrough](LOOM_LINK_HERE)
 
-Screenshot/GIF placeholder:
+Live app placeholder: VERCEL_URL_HERE
 
-![CareerScope demo screenshot or GIF](assets/screenshots/demo_placeholder.gif)
-
-## Base Project
-
-CareerScope extends **PawPal+**, the CodePath AI110 Module 1-3 base project. PawPal+ introduced the core applied-AI workflow: structured prompting, tool-backed retrieval, multi-step orchestration, and responsible model output handling. Its original goal was to demonstrate how an AI assistant can combine user input, domain context, and generated recommendations into a useful end-to-end experience.
-
-CareerScope adapts that foundation for career intelligence. Instead of pet-care planning, the system analyzes a candidate resume and target job description, retrieves similar role and benchmark context, identifies evidence-backed skill gaps, builds a 30/60/90-day plan, and produces concise outreach drafts tailored to the role.
-
-## Architecture Overview
+## Architecture
 
 ![CareerScope architecture diagram](assets/architecture_diagram.png)
 
-CareerScope uses a FastAPI backend and a Next.js 14 frontend direction, with Railway planned for backend deployment and Vercel planned for the web UI. The current runnable entry point is the CLI orchestrator in `main.py`.
+The monorepo contains a Next.js 14 frontend, a FastAPI backend, and the existing Python multi-agent pipeline. The frontend uploads a PDF resume and job description input to `/api/analyze`; the FastAPI backend streams Server-Sent Events while the parser, retriever, gap analyzer, roadmap, outreach, and report-writer steps complete. Reports are saved to Supabase and can be reopened through `/api/reports/{id}`.
 
-Data flow:
+## Repository Layout
 
-1. The user provides a resume PDF and either a job description URL or raw job description text.
-2. `ParserAgent` extracts resume text with `pdfplumber`, fetches or cleans the job description, and asks Gemini to return validated Pydantic objects.
-3. `RetrieverAgent` embeds the target role query with Gemini `text-embedding-004` at 768 dimensions, then searches Supabase pgvector `vector(768)` rows for similar job descriptions and benchmark documents.
-4. `GapAnalyzerAgent` compares parsed resume evidence, parsed job requirements, and retrieved context to produce a structured match score, strengths, critical gaps, and evidence strings.
-5. `RoadmapAgent` converts the gaps into a specific 30/60/90-day plan and two portfolio project ideas.
-6. `OutreachAgent` creates a LinkedIn DM and cold email draft while enforcing length, tone, and anti-generic-output guardrails.
-7. `CareerScopeOrchestrator` writes both JSON and Markdown reports to the output directory.
-
-## Setup
-
-### 1. Clone the Repository
-
-```bash
-git clone <YOUR_REPO_URL>
-cd applied-ai-system-project
+```text
+backend/
+  agents/      Gemini-powered parser, retriever, gap, roadmap, outreach, orchestrator
+  api/         FastAPI app with health, analyze, and reports routes
+  core/        Pydantic models, guardrails, logging, Gemini, Supabase helpers
+  data/        Deterministic test fixtures
+  eval/        Evaluation harness
+  scripts/     Corpus embedding and seeding scripts
+  tests/       Unit and API integration tests
+frontend/
+  app/         Next.js App Router pages
+  components/  Upload form, progress tracker, report dashboard
+  lib/         API client and TypeScript model mirrors
+assets/        Architecture diagram and screenshots
 ```
 
-### 2. Create a Virtual Environment
+## Local Setup
 
-Use Python 3.11 or 3.12 for the most reliable Supabase dependency installation.
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-```
-
-On Windows PowerShell:
+Use Python 3.11 or 3.12 for the backend. The current local Python 3.14 environment can run tests, but some Supabase transitive dependencies are more reliable on 3.11/3.12.
 
 ```powershell
+cd backend
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-```
-
-### 3. Install Dependencies
-
-```bash
+python -m pip install --upgrade pip
 pip install -r requirements.txt
+copy .env.example .env
 ```
 
-### 4. Configure Environment Variables
-
-Create `.env` from `.env.example`:
-
-```bash
-cp .env.example .env
-```
-
-Required values:
+Required backend environment variables:
 
 ```env
 GEMINI_API_KEY=your_gemini_key_here
 SUPABASE_URL=your_supabase_url
 SUPABASE_ANON_KEY=your_anon_key
 SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+FRONTEND_URL=http://localhost:3000
 ```
 
-CareerScope uses Google Gemini through `google-genai` only. Generation defaults to Gemini 2.0 Flash variants, and embeddings use `text-embedding-004` with `output_dimensionality=768`.
+Run the backend:
 
-### 5. Set Up Supabase pgvector
+```powershell
+cd backend
+uvicorn api.main:app --reload --port 8000
+```
 
-Run this SQL in the Supabase SQL editor:
+Run the frontend:
+
+```powershell
+cd frontend
+npm install
+copy .env.local.example .env.local
+npm run dev
+```
+
+Open `http://localhost:3000`.
+
+## Supabase SQL
+
+Run this in the Supabase SQL editor:
 
 ```sql
 create extension if not exists vector;
@@ -103,141 +95,82 @@ create table if not exists public.corpus (
   created_at timestamptz not null default now()
 );
 
-create unique index if not exists corpus_source_doc_content_idx
-  on public.corpus (source_file, doc_type, md5(content));
-
-create index if not exists corpus_embedding_ivfflat_idx
-  on public.corpus using ivfflat (embedding vector_cosine_ops)
-  with (lists = 100);
-
-create or replace function public.match_corpus(
-  query_embedding vector(768),
-  match_doc_type text,
-  match_count int default 5
-)
-returns table (
-  content text,
-  similarity_score float,
-  source_file text,
-  doc_type text,
-  metadata jsonb
-)
-language sql
-stable
-as $$
-  select
-    corpus.content,
-    1 - (corpus.embedding <=> query_embedding) as similarity_score,
-    corpus.source_file,
-    corpus.doc_type,
-    corpus.metadata
-  from public.corpus
-  where corpus.doc_type = match_doc_type
-  order by corpus.embedding <=> query_embedding
-  limit match_count;
-$$;
+create table reports (
+  id uuid primary key default gen_random_uuid(),
+  report_data jsonb not null,
+  created_at timestamp default now()
+);
 ```
 
-### 6. Seed the Corpus
+The implementation uses Google Gemini only through `google-genai`. Embeddings use `text-embedding-004` and Supabase `vector(768)`.
 
-Place `.txt` files in:
+## Backend CLI
 
-- `data/jds/` for job descriptions
-- `data/benchmarks/` for benchmark resumes or role expectations
+The original CLI still works from inside `backend/`:
 
-Then run:
-
-```bash
-python scripts/seed_corpus.py
-```
-
-The seed script chunks documents, embeds each chunk with Gemini `text-embedding-004`, validates 768-dimensional vectors, and upserts rows into Supabase.
-
-### 7. Run the CLI
-
-With raw job description text:
-
-```bash
+```powershell
 python main.py --resume data/test_fixtures/resumes/entry_swe.pdf --jd-text "Software Engineer role requiring Python, FastAPI, PostgreSQL, React, and production API experience."
 ```
 
-With a job description URL:
+Generated JSON and Markdown reports are written to `backend/outputs/`.
 
-```bash
-python main.py --resume path/to/resume.pdf --jd https://example.com/job-posting --output-dir outputs
-```
+## Deployment
 
-Reports are written as timestamped JSON and Markdown files in `outputs/`.
-
-## Sample Interactions
-
-### 1. Gap Analysis Snippet
+Railway backend:
 
 ```text
-Match score: 68%
-
-Critical gaps:
-- PostgreSQL: partial - Resume mentions SQL coursework, but does not show production schema design, query optimization, or migrations.
-- FastAPI: missing - Target role requires FastAPI experience; resume lists Flask and Python projects but no FastAPI evidence.
-- Cloud deployment: partial - Resume includes a Vercel-hosted frontend, but no backend deployment or observability details.
+Root directory: backend
+Start command: uvicorn api.main:app --host 0.0.0.0 --port $PORT
+Environment: GEMINI_API_KEY, SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, FRONTEND_URL
 ```
 
-### 2. 30/60/90-Day Roadmap Snippet
+Vercel frontend:
 
 ```text
-30 days:
-- Build a FastAPI CRUD service with PostgreSQL, Alembic migrations, request validation, and pytest coverage.
-
-60 days:
-- Add Supabase Auth and pgvector search to the service, then document API design decisions in the README.
-
-90 days:
-- Deploy the backend on Railway, connect it to a Next.js 14 frontend on Vercel, and prepare a role-specific technical walkthrough.
+Root repository deploy using vercel.json
+Set NEXT_PUBLIC_API_URL to the Railway backend URL
+Replace REPLACE_WITH_RAILWAY_URL in vercel.json before production deployment
 ```
-
-### 3. Recruiter Outreach Snippet
-
-```text
-LinkedIn DM:
-Hi Maya, I saw your team is hiring for a Software Engineer focused on backend APIs and data workflows. I recently built a Python/Supabase project with tested service layers and would value 10 minutes of advice on the role.
-
-Cold email subject:
-Software Engineer candidate with Python + Supabase project experience
-
-Cold email body:
-Maya, your Software Engineer role stood out because it combines API development, data modeling, and product-facing execution. My recent project, CareerScope, uses Python, Supabase pgvector, structured Pydantic models, and a multi-agent workflow to generate career reports from resumes and job descriptions. I am currently strengthening FastAPI deployment depth, but I can already speak concretely about backend design, retrieval quality, and testing tradeoffs. Would you be open to a short conversation or pointing me to the right person for this role?
-```
-
-## Design Decisions
-
-- **Supabase over ChromaDB:** Supabase gives CareerScope managed Postgres, pgvector search, SQL visibility, deployment-friendly persistence, and a path to auth/storage integration in one platform. ChromaDB is useful for local experimentation, but Supabase better matches an employer-facing, deployable product.
-- **Gemini SDK direct over LangChain:** CareerScope calls Gemini directly through `google-genai` to keep prompts, response schemas, retries, and token behavior explicit. This reduces abstraction overhead and makes debugging easier for a small multi-agent system.
-- **Pydantic inter-agent communication:** Each agent returns typed Pydantic models, so downstream agents receive validated structures instead of loose text. This keeps the parser, retriever, analyzer, roadmap, and outreach steps contract-driven.
-- **Gemini, not Anthropic:** The project standardizes on Google Gemini for generation and embeddings. It does not use Anthropic models, OpenAI models, or LangChain in the implementation.
 
 ## Testing
 
-Current local unit-test result:
+Current backend verification:
 
 ```text
-pytest tests/ -v
-7 passed in 0.13s
+python -m pytest tests/ -v --tb=short
+11 passed in 0.30s
 ```
 
-The unit tests cover parser behavior, retrieval helpers, gap analysis validation, and orchestrator report writing with mocked agent calls.
-
-Current eval-harness result:
+Backend startup verification:
 
 ```text
-python eval/eval_harness.py
-Summary: 0/5 tests passed. Average match score: 0.00. Average confidence: 0.00
+uvicorn api.main:app --port 8000
+GET /api/health -> {"status":"ok","version":"1.0.0"}
 ```
 
-The eval harness executed and printed the required pass/fail table, but all five cases failed before scoring because the live Gemini API returned `429 RESOURCE_EXHAUSTED` for `gemini-2.0-flash` with free-tier request/input-token quota set to `0`. The harness and deterministic fixtures are ready for a rerun once quota or billing is available.
+Frontend verification:
+
+```text
+npm run build
+Compiled successfully with Next.js 14.2.35
+```
+
+The live eval harness still depends on Gemini quota. Earlier live eval attempts reached Gemini `429 RESOURCE_EXHAUSTED`; unit and API tests mock external calls.
+
+## Base Project
+
+CareerScope extends PawPal+ from CodePath AI110 Module 1-3. PawPal+ introduced the applied-AI pattern of structured prompting, retrieval-backed context, and recommendation generation. CareerScope evolves that foundation into a deployed career intelligence product with RAG-grounded retrieval, typed agent handoffs, SSE progress streaming, and a report dashboard.
+
+## Design Decisions
+
+- Supabase over ChromaDB: managed Postgres, pgvector persistence, deployment-friendly data access, and a straightforward reports table.
+- Direct Gemini SDK over LangChain: explicit prompts, schemas, retries, model choices, and no hidden orchestration abstraction.
+- Pydantic models across agents: every agent produces validated structures that the next stage can consume safely.
+- SSE for progress: the frontend receives observable pipeline progress without waiting for the full report.
 
 ## Reflection
 
-See `model_card.md` for the project reflection, model-use notes, limitations, and responsible AI considerations.
+See `model_card.md` for system limitations, misuse risks, testing surprises, and the AI collaboration log.
 
 ## License
 
