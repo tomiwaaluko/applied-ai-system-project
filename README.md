@@ -47,6 +47,8 @@ cd applied-ai-system-project
 
 ### 2. Create a Virtual Environment
 
+Use Python 3.11 or 3.12 for the most reliable Supabase dependency installation.
+
 ```bash
 python -m venv .venv
 source .venv/bin/activate
@@ -215,15 +217,23 @@ Maya, your Software Engineer role stood out because it combines API development,
 
 ## Testing
 
-Current local result:
+Current local unit-test result:
 
 ```text
-pytest -q
-.......                                                                  [100%]
+pytest tests/ -v
 7 passed in 0.13s
 ```
 
-The unit tests cover parser behavior, retrieval helpers, gap analysis validation, and orchestrator report writing with mocked agent calls. The evaluation harness in `eval/eval_harness.py` is a placeholder until a real seeded corpus and live Gemini/Supabase run are available for repeatable quality metrics.
+The unit tests cover parser behavior, retrieval helpers, gap analysis validation, and orchestrator report writing with mocked agent calls.
+
+Current eval-harness result:
+
+```text
+python eval/eval_harness.py
+Summary: 0/5 tests passed. Average match score: 0.00. Average confidence: 0.00
+```
+
+The eval harness executed and printed the required pass/fail table, but all five cases failed before scoring because the live Gemini API returned `429 RESOURCE_EXHAUSTED` for `gemini-2.0-flash` with free-tier request/input-token quota set to `0`. The harness and deterministic fixtures are ready for a rerun once quota or billing is available.
 
 ## Reflection
 
