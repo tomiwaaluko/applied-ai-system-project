@@ -1,0 +1,7 @@
+NVIDIA is hiring a Machine Learning Engineer for accelerated AI systems. Required skills
+include Python, PyTorch, CUDA, deep learning, C++, model optimization, data pipelines, Linux,
+and rigorous model evaluation. Responsibilities include training neural networks, optimizing
+GPU inference performance, collaborating with research and platform teams, and deploying
+reproducible ML workflows. Preferred qualifications include TensorFlow, distributed training,
+Kubernetes, MLflow, computer vision, recommender systems, and experience benchmarking
+latency and throughput on NVIDIA hardware.

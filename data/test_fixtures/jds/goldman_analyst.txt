@@ -1,0 +1,7 @@
+Goldman Sachs is hiring an Analyst for a finance and analytics team. Required skills include
+Excel, financial modeling, accounting fundamentals, valuation, market research, Python,
+SQL, and clear written communication. Responsibilities include building models, analyzing
+business performance, preparing client-ready presentations, validating data quality, and
+summarizing risks and opportunities for senior stakeholders. Preferred skills include
+Tableau, statistics, PowerPoint, capital markets knowledge, and experience with portfolio
+analytics or banking datasets.

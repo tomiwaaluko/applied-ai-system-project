@@ -5,7 +5,7 @@ __pycache__/
 data/jds/
 data/benchmarks/
 *.pdf
+!data/test_fixtures/resumes/*.pdf
 node_modules/
 outputs/*.json
 outputs/*.md
-

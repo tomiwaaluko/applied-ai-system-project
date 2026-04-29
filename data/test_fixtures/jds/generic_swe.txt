@@ -1,0 +1,6 @@
+We are hiring a Software Engineer to build and maintain production web services. Required
+skills include Python, JavaScript, SQL, data structures, algorithms, REST APIs, Git, testing,
+debugging, and basic cloud deployment. Responsibilities include implementing features,
+reviewing code, writing unit tests, diagnosing defects, maintaining documentation, and
+collaborating with product and design partners. Preferred skills include React, Docker,
+PostgreSQL, CI/CD, Linux, observability, and experience shipping a project used by real users.

@@ -1,0 +1,7 @@
+Bloomberg is hiring a Data Engineer to build reliable market data pipelines for
+analytics teams. Required skills include Python, SQL, data modeling, ETL pipeline design,
+distributed systems, cloud data platforms, testing, and Linux. The engineer will design
+batch and streaming workflows, partner with product teams, monitor data quality, and
+improve performance of large datasets. Preferred skills include Spark, Kafka, Airflow,
+Docker, Kubernetes, and experience supporting production data infrastructure. Candidates
+should communicate clearly with stakeholders and be comfortable debugging complex systems.
