@@ -8,5 +8,11 @@ data/benchmarks/
 *.pdf
 !data/test_fixtures/resumes/*.pdf
 node_modules/
+frontend/.next/
+frontend/node_modules/
+backend/pycache/
+backend/**/pycache/
+backend/__pycache__/
+backend/**/__pycache__/
 outputs/*.json
 outputs/*.md
