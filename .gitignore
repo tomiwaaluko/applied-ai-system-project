@@ -1,4 +1,5 @@
 .env
+supabase_keys
 __pycache__/
 *.pyc
 .DS_Store
