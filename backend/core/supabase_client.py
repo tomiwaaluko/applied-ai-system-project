@@ -1,8 +1,14 @@
-"""Supabase pgvector helpers for the CareerScope corpus.
+"""Supabase pgvector helpers for the CareerScope corpus and reports.
 
 SQL setup to run in Supabase SQL editor or a migration:
 
 ```sql
+create table reports (
+  id uuid primary key default gen_random_uuid(),
+  report_data jsonb not null,
+  created_at timestamp default now()
+);
+
 create extension if not exists vector;
 
 create table if not exists public.corpus (
@@ -58,6 +64,7 @@ import uuid
 from typing import TYPE_CHECKING, Any
 
 from core.logger import get_logger
+from core.models import CareerReport
 
 if TYPE_CHECKING:
     from supabase import Client
@@ -282,3 +289,45 @@ def is_source_file_seeded(source_file: str, doc_type: str | None = None) -> bool
 
     response = query.execute()
     return bool(response.data)
+
+
+def save_report(report: CareerReport) -> str:
+    """Persist a CareerReport JSON payload and return its report id."""
+    if not report.id:
+        report.id = str(uuid.uuid4())
+
+    payload = {"id": report.id, "report_data": report.model_dump(mode="json")}
+    response = get_supabase_client(use_service_role=True).table("reports").insert(payload).execute()
+    data = response.data or []
+    logger.info("report_saved", report_id=report.id)
+
+    if data and data[0].get("id"):
+        return str(data[0]["id"])
+    return report.id
+
+
+def get_report(report_id: str) -> dict[str, Any] | None:
+    """Fetch one saved report by id."""
+    response = (
+        get_supabase_client(use_service_role=True)
+        .table("reports")
+        .select("id, report_data, created_at")
+        .eq("id", report_id)
+        .limit(1)
+        .execute()
+    )
+    data = response.data or []
+    return data[0] if data else None
+
+
+def list_reports(limit: int = 20) -> list[dict[str, Any]]:
+    """Return recent saved reports."""
+    response = (
+        get_supabase_client(use_service_role=True)
+        .table("reports")
+        .select("id, report_data, created_at")
+        .order("created_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return response.data or []

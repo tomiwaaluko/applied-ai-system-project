@@ -1,5 +1,6 @@
 from enum import Enum
 from typing import Optional
+import uuid
 
 from pydantic import BaseModel
 
@@ -78,6 +79,7 @@ class OutreachDraft(BaseModel):
 
 
 class CareerReport(BaseModel):
+    id: str = ""
     resume: ParsedResume
     jd: ParsedJD
     retrieved_context: RetrievedContext
@@ -86,3 +88,16 @@ class CareerReport(BaseModel):
     outreach: OutreachDraft
     metadata: dict
 
+
+class AnalyzeRequest(BaseModel):
+    jd_input: str
+
+
+class ProgressEvent(BaseModel):
+    step: int
+    total: int
+    agent: str
+    status: str
+    elapsed_seconds: float
+    message: str
+    report_id: Optional[str] = None
