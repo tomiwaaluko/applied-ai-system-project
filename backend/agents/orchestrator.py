@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Awaitable, Callable, TypeVar
@@ -14,7 +15,7 @@ from agents.retriever_agent import RetrieverAgent
 from agents.roadmap_agent import RoadmapAgent
 from core.guardrails import validate_jd_input, validate_pdf_input
 from core.logger import get_logger
-from core.models import CareerReport, GapAnalysis, OutreachDraft, RetrievedContext, Roadmap
+from core.models import CareerReport, GapAnalysis, OutreachDraft, ProgressEvent, RetrievedContext, Roadmap
 
 
 T = TypeVar("T")
@@ -30,7 +31,12 @@ class CareerScopeOrchestrator:
         self.outreach = OutreachAgent()
         self.output_dir = Path(output_dir)
 
-    async def run(self, resume_path: str, jd_input: str) -> CareerReport:
+    async def run(
+        self,
+        resume_path: str,
+        jd_input: str,
+        progress_callback: Callable[[ProgressEvent], Awaitable[None]] | None = None,
+    ) -> CareerReport:
         start = time.perf_counter()
         self._validate_inputs(resume_path, jd_input)
 
@@ -41,6 +47,13 @@ class CareerScopeOrchestrator:
         )
         parse_seconds = time.perf_counter() - parse_started
         print(f"[1/5] Parsing resume + job description... OK ({parse_seconds:.1f}s)")
+        await self._emit_progress(
+            progress_callback,
+            step=1,
+            agent="parser",
+            elapsed_seconds=parse_seconds,
+            message="Parsed resume and job description.",
+        )
 
         retrieval_started = time.perf_counter()
         retrieved_context = await self._retry(
@@ -48,7 +61,15 @@ class CareerScopeOrchestrator:
             lambda: self.retriever.retrieve(resume, jd),
             fallback=lambda error: self._fallback_retrieved_context(error),
         )
-        print(f"[2/5] Retrieving context... OK ({time.perf_counter() - retrieval_started:.1f}s)")
+        retrieval_seconds = time.perf_counter() - retrieval_started
+        print(f"[2/5] Retrieving context... OK ({retrieval_seconds:.1f}s)")
+        await self._emit_progress(
+            progress_callback,
+            step=2,
+            agent="retriever",
+            elapsed_seconds=retrieval_seconds,
+            message="Retrieved role context from the corpus.",
+        )
 
         gap_started = time.perf_counter()
         gap_analysis = await self._retry(
@@ -56,7 +77,15 @@ class CareerScopeOrchestrator:
             lambda: self.gap_analyzer.analyze(resume, jd, retrieved_context),
             fallback=lambda error: self._fallback_gap_analysis(error),
         )
-        print(f"[3/5] Analyzing skill gaps... OK ({time.perf_counter() - gap_started:.1f}s)")
+        gap_seconds = time.perf_counter() - gap_started
+        print(f"[3/5] Analyzing skill gaps... OK ({gap_seconds:.1f}s)")
+        await self._emit_progress(
+            progress_callback,
+            step=3,
+            agent="gap_analyzer",
+            elapsed_seconds=gap_seconds,
+            message="Completed evidence-based gap analysis.",
+        )
 
         build_started = time.perf_counter()
         roadmap, outreach = await asyncio.gather(
@@ -71,9 +100,18 @@ class CareerScopeOrchestrator:
                 fallback=lambda error: self._fallback_outreach(error),
             ),
         )
-        print(f"[4/5] Building roadmap + outreach... OK ({time.perf_counter() - build_started:.1f}s)")
+        build_seconds = time.perf_counter() - build_started
+        print(f"[4/5] Building roadmap + outreach... OK ({build_seconds:.1f}s)")
+        await self._emit_progress(
+            progress_callback,
+            step=4,
+            agent="roadmap_outreach",
+            elapsed_seconds=build_seconds,
+            message="Generated roadmap and outreach drafts.",
+        )
 
         report = CareerReport(
+            id=str(uuid.uuid4()),
             resume=resume,
             jd=jd,
             retrieved_context=retrieved_context,
@@ -101,7 +139,39 @@ class CareerScopeOrchestrator:
             f"Confidence: {report.gap_analysis.confidence:.2f}"
         )
         self.logger.info("report_written", json_path=str(json_path), markdown_path=str(markdown_path))
+        await self._emit_progress(
+            progress_callback,
+            step=5,
+            agent="report_writer",
+            elapsed_seconds=time.perf_counter() - start,
+            message="Assembled and wrote the report.",
+            report_id=report.id,
+        )
         return report
+
+    async def _emit_progress(
+        self,
+        progress_callback: Callable[[ProgressEvent], Awaitable[None]] | None,
+        *,
+        step: int,
+        agent: str,
+        elapsed_seconds: float,
+        message: str,
+        report_id: str | None = None,
+    ) -> None:
+        if progress_callback is None:
+            return
+        await progress_callback(
+            ProgressEvent(
+                step=step,
+                total=5,
+                agent=agent,
+                status="done",
+                elapsed_seconds=round(elapsed_seconds, 3),
+                message=message,
+                report_id=report_id,
+            )
+        )
 
     def _validate_inputs(self, resume_path: str, jd_input: str) -> None:
         if not validate_pdf_input(resume_path):
